@@ -6,43 +6,41 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, ProcessPoolExec
 
 class Server:
 
-    def __init__(self, n, m):
+    def __init__(self, n):
         self.sock = socket.socket()
         self.n = n
-        self.m = m
 
     def running(self):
         self.sock.bind(('', 15222))
         self.sock.listen(socket.SOMAXCONN)
+        with ProcessPoolExecutor(max_workers=self.n) as executor:
+            while True:
+                conn = 1
+                executor.map(self.worker, [conn])
+
+    def worker(self, conn):
         conn, addr = self.sock.accept()
-        conn.settimeout(20)
-        while True:
-            try:
-                with ProcessPoolExecutor(max_workers=self.n) as executor:
-                    executor.map(self.cycle, [conn])
-            except socket.timeout:
-                print('Close connection by timeout error')
-                break
-            except socket.error:
-                print('Ошибка: ', socket.error)
-                break
-        conn.close()
-
-    def cycle(self, conn):
-        with ThreadPoolExecutor(max_workers=self.m) as executor:
-            data = conn.recv(1024)
-            data_l = [data]
-            value = [executor.submit(self.return_value, data) for data in data_l]
-            for future in as_completed(value):
-                value = future.result()
-            cort = (conn, value)
-            executor.submit(self.send_answer, cort)
-            if value == 'Close connection':
-                conn.close()
-                '''a = 1/0
-                print(a)
-                print('.')'''
-
+        conn.settimeout(5)
+        with ThreadPoolExecutor() as executor:
+            with conn:
+                while True:
+                    try:
+                        data = conn.recv(1024)
+                        data_l = [data]
+                        value = [executor.submit(self.return_value, data) for data in data_l]
+                        for future in as_completed(value):
+                            value = future.result()
+                        cort = (conn, value)
+                        executor.submit(self.send_answer, cort)
+                        if value == 'Close connection':
+                            conn.close()
+                            print('Close connection by client')
+                            break
+                    except socket.timeout:
+                        print('Timeout error')
+                        conn.close()
+                    except socket.error:
+                        conn.close()
 
     def return_value(self, comm):
         comm = comm.decode('utf-8')
@@ -68,5 +66,5 @@ class Server:
 
 if __name__ == '__main__':
     freeze_support()
-    serv = Server(5, 5)
+    serv = Server(5)
     serv.running()
